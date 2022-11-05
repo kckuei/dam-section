@@ -160,7 +160,7 @@ def plot_sections(fig, ax, section_data, color_data):
                     c='b', lw=1.0, zorder=0, label=key)
         else:
             ax.fill(section.x, section.elev,
-                    c=color_data[key],  lw=1.0, zorder=0, label=key)
+                    c=color_data[key], lw=1.0, zorder=0, label=key)
             
     return fig, ax
         
