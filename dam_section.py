@@ -375,7 +375,7 @@ class Section:
         if self._collections.get(collection_id, None):
             del self._collections[collection_id]
             
-    def return_boring_collection(collection_id):
+    def return_boring_collection(self, collection_id):
         """Returns a boring collection object given the unique identifier.
         
         Parameters:
