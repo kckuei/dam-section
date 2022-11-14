@@ -98,6 +98,18 @@ class Line:
         self._intercept = intercept
       
     # Puclic getters.
+    def get_points(self):
+        """Returns the end points."""
+        return self._points
+        
+    def get_end1(self):
+        """Returns the first endpoint."""
+        return self._points[0]
+    
+    def get_end2(self):
+        """Returns the second endpoint."""
+        return self._points[1]
+        
     def get_slope(self):
         """"Returns the slope."""
         return self._slope
@@ -126,7 +138,12 @@ class Line:
         m2 = -1/m1
         xo, yo = point.get_xy()
         b2 = yo - m2 * xo
-        return Line(m2, b2)
+        
+        # NEED VERIFY THIS.
+        b1 = self.get_intercept()
+        x_intersec = (b2 - b1) / (m1 - m2)
+        y_intersec = m1 * x_intersec + b1
+        return  Line(point, Point(x_intersec, y_intersec))     
     
     def get_intersection(self, line):
         """Returns the intersection of the current line object with the 
@@ -150,7 +167,6 @@ class Line:
             p2 : Point object 2.
         """
         return Line(*p1.get_slope_intercept(p2))
-
 
 
 class Borehole:
@@ -255,14 +271,11 @@ class BoringCollection:
     or continuous CPT data.
     
     Attributes:
-        _borings :
-        _boring_data :
-        _boring_color_data :
-        _boring_interval_data :
-        
-        _projection_point : projection point to a particular section.          ; Maybe should not be attributes of the borehole.
-        _projection_line  : projection line to a particular section.           ; Could be methods of a section given a boring. 
-        _section_loc      : projection x-loc on the particular section.        ; Borehole can be attached to multiple sections. 
+        _borings : dictionary representing individual boreholes, where the keys
+            are the unique identifiers.
+        _boring_data : dataframe of raw boring data including lat/long.
+        _boring_color_data : dataframe representing custom color mapping.
+        _boring_interval_data : dataframe of raw boring interval data. 
         
     """
     def __init__(self):
@@ -280,9 +293,48 @@ class BoringCollection:
         """Returns the boring ids."""
         return self._borings.keys()
     
+    def get_color_data(self):
+        """Returns the color data.
+        
+        SHOULD RETURN DEFAULT COLORMAP, IF NO CUSTOM SPECIFIED (NONE)
+        
+        """
+        return self._boring_color_data
+
+    
+        # # Create default colormap
+        # ## sorted(list(filter(lambda x: type(x) is str, key_values)))
+        # # key_values = interval_data.Classification.unique()
+        # # cmap = cm.get_cmap(name="Spectral")
+        # # cmap_segmented = cmap(np.linspace(0, 1, len(key_values))) 
+        # # colors = dict()
+        # # for key, c in zip(key_values, cmap_segmented):
+        # #     colors[key] = c
+        # colors = boring_color_data.set_index('Classification')['Color'].to_dict()
+    
+        
+    # Public setters.
+    def add_boring(self, boring_id, borehole):
+        """Adds a boring to the collection."""
+        self._borings[boring_id] = borehole
+        
+    def remove_boring(self, boring_id):
+        """Removes a boring from the collection if it exists."""
+        if self._borings.get(boring_id, None):
+            del self._borings[boring_id]
+
+    def set_color_data(self, color_data):
+        """Sets custom color data."""
+        self._boring_color_data = color_data
+    
+    def remove_color_data(self):
+        """Resets/removes custom color data."""
+        self._boring_color_data = None
+    
     # Public methods.
     def process_borings(self, boring_ids, boring_data, interval_data):
         """Process the borings, and return a dictionary of borings.
+        
         Parameters:
             boring_ids : list of integers representing borings to process.
             boring_data : Dataframe representing boring data. 
@@ -302,31 +354,8 @@ class BoringCollection:
             data['End Elev.'] = elev - data['End Depth']
             
             self._borings[boring_id] = Borehole(boring_id, data, elev, lat, long)
-
-    
-    def update_boring_projections(borings, section_line, xy_us_toe):
-        """Updates boring projections."""  
-        # Add the boring projections to the boring objects
-        for bh in borings:
-            
-            # Get the boring location
-            xy = (borings[bh].get_lat(), borings[bh].get_long())
         
-            # Get borehole projection line by projecting from borehole location to section line
-            projection_line = get_orthogonal_line(section_line, xy)
-            
-            # Get the intersection point, or borehole location projected to section
-            projected_point = get_intersection(section_line, projection_line)
-            
-            # Get the in-plane distance to the borehole on the section
-            x = get_distance(xy_us_toe, projected_point)
-        
-            # One degree of lattitude equals ~ 364,567.2 ft (69.1 miles); approximation; revisit later and check
-            x_ft = x * 364567.2 
-        
-            borings[bh].set_section_loc(x_ft)
-            borings[bh].set_projection_point(projected_point)
-            borings[bh].set_projection_line(projection_line)
+        self._boring_data = boring_data
 
 
 class Section:
@@ -491,46 +520,107 @@ class Section:
             return fig, ax
         except:
             print("Error when plotting dam section.")
-
+    
+    def plot_borings(self, collection_id, ax=None, fig=None):
+        """Plots the boring data.
+        
+        Parameters:
+            collection_id : unique identifier representing boring collection.
+            ax : passed matplotlib axes handle.
+            fig : passed matplotlib figure handle.
+        """        
+        # SHOULD BE DICT / DEFAULT PARAMS
+        width = 10
+        fs = 5
+        bh_label_voffset = 5
+        
+        # Get the boring data and colors
+        boring_collection = self._collections[collection_id]
+        borings = boring_collection.get_borings()
+        colors = boring_collection.get_color_data()
+        
+        # Convert the color data from dataframe to dict with classification
+        # values as keys.
+        colors = colors.set_index('Classification')['Color'].to_dict()
+        
+        try:
+            # Sets up a new figure and axis handle if we aren't given one.
+            if ax == None:
+                fig, ax = plt.subplots()
+                ax.set_aspect('equal','box')
+            
+            # Loop over the borings.
+            for bh in borings:
+                
+                # Get the boring data and location/horizontal offset.
+                df = borings[bh].get_data()
+                xo = borings[bh].get_section_loc(self._line, 
+                                                 self._line.get_end1()
+                                                 )
+                
+                # Add boring label.
+                ax.text(xo, df.iloc[0]['Start Elev.'] + bh_label_voffset, bh)
+                
+                # Plot the interval data.
+                for i, row in df.iterrows():
+                    
+                    x = np.array([xo, xo + width]).flatten()
+                    y1 = [row['End Elev.'],row['End Elev.']]
+                    y2 = [row['Start Elev.'],row['Start Elev.']]
+                    col = colors.get(row.Classification, 'w')
+                    ax.fill_between(x, y1, y2=y2, color=col, ec='k', lw=0.5)
+                    
+                    # Add a borehole description
+                    try:        
+                        description = row.Description.split(",")[0]
+                    except:
+                        description = ""
+                    ax.text(xo + width,
+                            (row['End Elev.'] + row['Start Elev.'])/2, 
+                             f"{row.Classification} ({description})", 
+                             fontsize = fs
+                             )
+            return fig, ax
+        except:
+            print("Error when plotting borehole collection.")
+            
 
 def main():
     """
     Example usage.
     """
-    # Load the data
+    # Create the boring collection.
+    bhc = BoringCollection()
+    boring_ids = [5, 10, 23, 29, 22, 11, 1, 3, 2, 4]
     fname = "Terminal Dam Boring Intervals.xlsx"
     boring_data = pd.read_excel(fname, sheet_name="borings")
     interval_data = pd.read_excel(fname, sheet_name="boring-data")
     boring_color_data = pd.read_excel(fname, sheet_name="colors")
-    boring_ids = [5, 10, 23, 29, 22, 11, 1, 3, 2, 4]
-    
-    bhc = BoringCollection()
     bhc.process_borings(boring_ids, boring_data, interval_data)
+    bhc.set_color_data(boring_color_data)
     
+    
+    # Create the section.
     section = Section()
     section.read_section_data("Terminal Dam Section.csv")
-    us_toe = Point(35.1707027, -120.5346784)
+    # us_toe = Point(35.1707027, -120.5346784)
+    # ds_toe = Point(35.1696816, -120.5333135)
+    us_toe = Point(35.1708928, -120.5345804)
     ds_toe = Point(35.1696816, -120.5333135)
     section.set_line_from_points(us_toe, ds_toe)
     
+    # Add the boring collection to the section.
+    section.add_collection('wcs-borings', bhc)
+    
+    # Plot the section.
     fig, ax = plt.subplots(figsize=(15,15))
     section.plot_sections(ax=ax)
-    # section.plot_borings
+    section.plot_borings('wcs-borings', ax=ax)
     ax.set_ylim(bottom=150, top=360)
     ax.set_xlim(left=-25, right=800)
     ax.set_aspect('equal','box')    
     # fig.savefig("test.svg", dpi=300, bbox_inches="tight", format="svg")
     # plt.show()
-    
-    # # Create colormap
-    # ## sorted(list(filter(lambda x: type(x) is str, key_values)))
-    # # key_values = interval_data.Classification.unique()
-    # # cmap = cm.get_cmap(name="Spectral")
-    # # cmap_segmented = cmap(np.linspace(0, 1, len(key_values))) 
-    # # colors = dict()
-    # # for key, c in zip(key_values, cmap_segmented):
-    # #     colors[key] = c
-    # colors = boring_color_data.set_index('Classification')['Color'].to_dict()
     
 
 if __name__ == '__main__':
