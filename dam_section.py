@@ -300,20 +300,21 @@ class BoringCollection:
         return self._borings.keys()
     
     def get_color_data(self):
-        """Returns the color data.
-        
-        SHOULD RETURN DEFAULT COLORMAP, IF NO CUSTOM SPECIFIED (NONE)
-        
-        """
-        # # Create default colormap
-        # keys = self._interval_data.Classification.unique()
-        # cmap = cm.get_cmap(name="Spectral")
-        # cmap_segmented = cmap(np.linspace(0, 1, len(keys))) 
-        # colors = dict()
-        # for key, c in zip(keys, cmap_segmented):
-        #     colors[key] = c
-        # # colors = boring_color_data.set_index('Classification')['Color'].to_dict()
-        return self._boring_color_data
+        """Returns the custom colormpa if it exists, otherwise sets and returns
+        a generic colormap."""
+        # If an existing colormap exists, return it.
+        if self._boring_color_data:
+            return self._boring_color_data
+        # Otherwise, return a generic colormap.
+        else:
+            keys = self._interval_data.Classification.unique()
+            cmap = cm.get_cmap(name="Spectral")
+            cmap_segmented = cmap(np.linspace(0, 1, len(keys))) 
+            colors = dict()
+            for key, c in zip(keys, cmap_segmented):
+                colors[key] = c
+            self._boring_color_data = colors
+            return self._boring_color_data
 
     # Public setters.
     def add_boring(self, boring_id, borehole):
@@ -325,8 +326,14 @@ class BoringCollection:
         if self._borings.get(boring_id, None):
             del self._borings[boring_id]
 
-    def set_color_data(self, color_data):
-        """Sets custom color data."""
+    def set_color_data(self, df_color):
+        """Sets custom color data.
+        Parameters:
+            df_color : dataframe of classification/lithology to color.
+        """
+        # Convert the color data from dataframe to dict with classification
+        # values as keys.
+        color_data = df_color.set_index('Classification')['Color'].to_dict()
         self._boring_color_data = color_data
     
     def remove_color_data(self):
@@ -358,6 +365,7 @@ class BoringCollection:
             self._borings[boring_id] = Borehole(boring_id, data, elev, lat, long)
         
         self._boring_data = boring_data
+        self._interval_data = interval_data
 
 
 class Section:
@@ -580,10 +588,6 @@ class Section:
         boring_collection = self._collections[collection_id]
         borings = boring_collection.get_borings()
         colors = boring_collection.get_color_data()
-        
-        # Convert the color data from dataframe to dict with classification
-        # values as keys.
-        colors = colors.set_index('Classification')['Color'].to_dict()
         
         try:
             # Sets up a new figure and axis handle if we aren't given one.
