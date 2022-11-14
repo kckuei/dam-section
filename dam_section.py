@@ -134,15 +134,21 @@ class Line:
         Parameters:
             point : Point object.
         """
-        m1 = self.get_slope()
-        m2 = -1/m1
+        # Point of interest.
         xo, yo = point.get_xy()
+        
+        # Slope and intercept of line.
+        m1 = self.get_slope()
+        b1 = self.get_intercept()
+        
+        # Slope and intercept of orthogonal line to point.
+        m2 = -1/m1
         b2 = yo - m2 * xo
         
-        # NEED VERIFY THIS.
-        b1 = self.get_intercept()
+        # Intersection of the two lines (projection point)
         x_intersec = (b2 - b1) / (m1 - m2)
         y_intersec = m1 * x_intersec + b1
+        
         return  Line(point, Point(x_intersec, y_intersec))     
     
     def get_intersection(self, line):
@@ -299,20 +305,16 @@ class BoringCollection:
         SHOULD RETURN DEFAULT COLORMAP, IF NO CUSTOM SPECIFIED (NONE)
         
         """
+        # # Create default colormap
+        # keys = self._interval_data.Classification.unique()
+        # cmap = cm.get_cmap(name="Spectral")
+        # cmap_segmented = cmap(np.linspace(0, 1, len(keys))) 
+        # colors = dict()
+        # for key, c in zip(keys, cmap_segmented):
+        #     colors[key] = c
+        # # colors = boring_color_data.set_index('Classification')['Color'].to_dict()
         return self._boring_color_data
 
-    
-        # # Create default colormap
-        # ## sorted(list(filter(lambda x: type(x) is str, key_values)))
-        # # key_values = interval_data.Classification.unique()
-        # # cmap = cm.get_cmap(name="Spectral")
-        # # cmap_segmented = cmap(np.linspace(0, 1, len(key_values))) 
-        # # colors = dict()
-        # # for key, c in zip(key_values, cmap_segmented):
-        # #     colors[key] = c
-        # colors = boring_color_data.set_index('Classification')['Color'].to_dict()
-    
-        
     # Public setters.
     def add_boring(self, boring_id, borehole):
         """Adds a boring to the collection."""
@@ -484,7 +486,7 @@ class Section:
             print("Failed to load section data.")
                 
     
-    def plot_sections(self, ax=None, fig=None):
+    def plot_sections(self, ax=None, fig=None, x_scale=1, y_scale=1):
         """Plots the section data, and returns the figure and axis handle.
         
         Certain keywords (case-insensitive) are resevered, e.g.
@@ -496,6 +498,8 @@ class Section:
         Parameters:
             ax  : matplotlib axis handle.
             fig : matplotlib figure handle.
+            x_scale : scales the horizontal geometry by x_scale.
+            y_scale : scales the vertical geometry by y_scale.
         """
         try:
             # Sets up a new figure and axis handle if we aren't given one.
@@ -505,35 +509,73 @@ class Section:
             
             # Plots all of the section data geometries.
             for key in self.get_zones():
+                
                 section = self.get_section(key)
                 color = self.get_color(key)
                 
                 if key.lower() in ('dam profile', 'profile'):
-                    ax.plot(section.x, section.elev,
+                    ax.plot(section.x * x_scale, section.elev * y_scale,
                             c='k', lw=1.0, zorder=0, label=key)
                 elif key.lower() in ('resevoir level', 'water level'):
-                    ax.plot(section.x, section.elev,
+                    ax.plot(section.x * x_scale, section.elev * y_scale,
                             c='b', lw=1.0, zorder=0, label=key)
                 else:
-                    ax.fill(section.x, section.elev,
+                    ax.fill(section.x * x_scale, section.elev * y_scale,
                             c=color,  lw=1.0, zorder=0, label=key)
             return fig, ax
         except:
             print("Error when plotting dam section.")
+            
+            
+    def add_section_legend(self, ax, 
+                           loc='upper center', 
+                           fontsize=10, 
+                           strip=()):
+        """Adds a legend for sections to an axes.
+        
+        Parameters:
+            ax : matplotlib axes to add legend to.
+            loc : legend location.
+            fontsize : legend font size.
+            strip : tuple/list of strings segments to strip/delete from legend
+                labels.
+        """
+        # Get the handles and legend labels
+        handles, labels = ax.get_legend_handles_labels()
+        
+        # Delete/remove specific string segments
+        modified_labels = []
+        for lab in labels:
+            for string in strip:
+                lab = lab.replace(string,'')
+            lab = lab.rstrip()
+            modified_labels.append(lab)
+        
+        # Adds legend with repeating labels 
+        by_label = dict(zip(modified_labels, handles))
+        ax.legend(by_label.values(), by_label.keys(),
+                  ncol=len(by_label), loc=loc, fontsize=fontsize)
+        return ax
+                 
     
-    def plot_borings(self, collection_id, ax=None, fig=None):
+    def plot_borings(self, collection_id, ax=None, fig=None, 
+                     boring_offset = 0,
+                     boring_width = 10,
+                     bh_font_size = 5,
+                     bh_label_voffset = 5,
+                     ):
         """Plots the boring data.
         
         Parameters:
             collection_id : unique identifier representing boring collection.
             ax : passed matplotlib axes handle.
             fig : passed matplotlib figure handle.
-        """        
-        # SHOULD BE DICT / DEFAULT PARAMS
-        width = 10
-        fs = 5
-        bh_label_voffset = 5
-        
+            boring_offset : specifies a custom horizontal offset/shift applied
+                to all boreholes, in ft.
+            boring_width : width of the boreholes, in ft.
+            bh_font_size : font size of borehole descriptions.
+            bh_label_voffset : vertical shift of borehole id, in ft.
+        """
         # Get the boring data and colors
         boring_collection = self._collections[collection_id]
         borings = boring_collection.get_borings()
@@ -555,8 +597,10 @@ class Section:
                 # Get the boring data and location/horizontal offset.
                 df = borings[bh].get_data()
                 xo = borings[bh].get_section_loc(self._line, 
-                                                 self._line.get_end1()
-                                                 )
+                                                 self._line.get_end1())
+                
+                # Apply custom offset to borings. 
+                xo += boring_offset
                 
                 # Add boring label.
                 ax.text(xo, df.iloc[0]['Start Elev.'] + bh_label_voffset, bh)
@@ -564,7 +608,7 @@ class Section:
                 # Plot the interval data.
                 for i, row in df.iterrows():
                     
-                    x = np.array([xo, xo + width]).flatten()
+                    x = np.array([xo, xo + boring_width]).flatten()
                     y1 = [row['End Elev.'],row['End Elev.']]
                     y2 = [row['Start Elev.'],row['Start Elev.']]
                     col = colors.get(row.Classification, 'w')
@@ -575,10 +619,10 @@ class Section:
                         description = row.Description.split(",")[0]
                     except:
                         description = ""
-                    ax.text(xo + width,
+                    ax.text(xo + boring_width,
                             (row['End Elev.'] + row['Start Elev.'])/2, 
                              f"{row.Classification} ({description})", 
-                             fontsize = fs
+                             fontsize = bh_font_size
                              )
             return fig, ax
         except:
@@ -586,41 +630,40 @@ class Section:
             
 
 def main():
-    """
-    Example usage.
-    """
-    # Create the boring collection.
-    bhc = BoringCollection()
+    # Boring inputs.
     boring_ids = [5, 10, 23, 29, 22, 11, 1, 3, 2, 4]
     fname = "Terminal Dam Boring Intervals.xlsx"
     boring_data = pd.read_excel(fname, sheet_name="borings")
     interval_data = pd.read_excel(fname, sheet_name="boring-data")
     boring_color_data = pd.read_excel(fname, sheet_name="colors")
+    
+    # Create the boring collection and add borings, and color data.
+    bhc = BoringCollection()
     bhc.process_borings(boring_ids, boring_data, interval_data)
     bhc.set_color_data(boring_color_data)
     
-    
-    # Create the section.
+    # Create the dam section, and define alignment.
     section = Section()
     section.read_section_data("Terminal Dam Section.csv")
-    # us_toe = Point(35.1707027, -120.5346784)
-    # ds_toe = Point(35.1696816, -120.5333135)
     us_toe = Point(35.1708928, -120.5345804)
     ds_toe = Point(35.1696816, -120.5333135)
     section.set_line_from_points(us_toe, ds_toe)
     
-    # Add the boring collection to the section.
+    # Attach the boring collection to the dam section.
     section.add_collection('wcs-borings', bhc)
     
-    # Plot the section.
+    # Plot the dam section and borings.
     fig, ax = plt.subplots(figsize=(15,15))
     section.plot_sections(ax=ax)
-    section.plot_borings('wcs-borings', ax=ax)
-    ax.set_ylim(bottom=150, top=360)
-    ax.set_xlim(left=-25, right=800)
+    section.plot_borings('wcs-borings', ax=ax, boring_offset=-15)
+    ax.set_ylim(bottom=150, top=380)
+    ax.set_xlim(left=-25, right=850)
     ax.set_aspect('equal','box')    
-    # fig.savefig("test.svg", dpi=300, bbox_inches="tight", format="svg")
-    # plt.show()
+    ax.set_xlabel('Distance (ft)')
+    ax.set_ylabel('Elevation (ft)')
+    section.add_section_legend(ax, strip=('US', 'DS'))
+    fig.savefig("test.svg", dpi=300, bbox_inches="tight", format="svg")
+    plt.show()
     
 
 if __name__ == '__main__':
