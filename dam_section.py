@@ -50,7 +50,7 @@ class Point:
     
     def get_xy(self):
         """Returns (x,y) tuple."""
-        return (self._x, self.y_)
+        return (self._x, self._y)
     
     # Public methods.
     def get_distance(self, p):
@@ -483,6 +483,9 @@ def main():
     
     section = Section()
     section.read_section_data("Terminal Dam Section.csv")
+    us_toe = Point(35.1707027, -120.5346784)
+    ds_toe = Point(35.1696816, -120.5333135)
+    section.set_line_from_points(us_toe, ds_toe)
     
     fig, ax = plt.subplots(figsize=(15,15))
     section.plot_sections(ax=ax)
