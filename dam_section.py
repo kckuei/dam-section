@@ -166,10 +166,6 @@ class Borehole:
         _elev    : borehole elevation datum
         _lat     : borehole latittude 
         _long    : borehole longitude
-        
-        _projection_point : projection point to a particular section.          ; Maybe should not be attributes of the borehole.
-        _projection_line  : projection line to a particular section.           ; Could be methods of a section given a boring. 
-        _section_loc      : projection x-loc on the particular section.        ; Borehole can be attached to multiple sections. 
     """
     def __init__(self, name, data, elev, lat, long):
         """Initializes a Borehole instance."""
@@ -178,11 +174,8 @@ class Borehole:
         self._elev = elev
         self._lat = lat
         self._long = long
-        self._projection_point = None
-        self._projection_line = None
-        self._section_loc = None
     
-    # Public getters
+    # Public getters.
     def get_data(self): 
         """"Returns the data."""
         return self._data
@@ -199,30 +192,58 @@ class Borehole:
         """Returns the longitude."""
         return self._long
     
-    def get_projection_point(self):
-        """Returns the projection point."""
-        return self._projection_point
+    def get_point(self):
+        """Returns the borehole coordinates as a point."""
+        return Point(self._lat, self._long)
     
-    def get_projection_line(self):
-        """Returns the projection line."""
-        return self._projection_line
-    
-    def get_section_loc(self):
-        """Returns the location on the section."""
-        return self._section_loc
-    
-    # Public setters
-    def set_projection_point(self, point):
-        """Sets the projection point to a section."""
-        self._projection_point = point
+    # Public methods.
+    def get_projection_point(self, line):
+        """Returns the projection point of the borehole to a line of interest
+        (i.e., orthogonal projection to a line of interest).
         
-    def set_projection_line(self, line):
-        """Sets the projection line."""
-        self._projection_line = line
+        Parameters:
+            line : Line object representing the line of interest.
+        """
+        projection_line = line.get_orthogonal_line(self.get_point())
+        return projection_line.get_intersection(line)
     
-    def set_section_loc(self, x):
-        """Sets the location on the section."""
-        self._section_loc = x
+    def get_projection_line(self, line):
+        """Returns a new Line object representing the orthogonal projection
+        from the borehole location to a line of interest. 
+        
+        Parameters:
+            line : Line object representing the line of interest.
+        """
+        return line.get_orthogonal_line(self.get_point())
+    
+    def get_section_loc(self, section_line, ref_point):
+        """Returns the location of the borehole on a section.
+        
+        Parameters:
+            section_line : Line object, representing the section line.
+            ref_point : a reference point on the section_line from which to 
+                to calculate the horizontal offset, distance or location from
+                the reference. Should be an upstream or most distal point since
+                we are deriving distances.
+        """
+        # The boring location.
+        boring_point = self.get_point()
+        
+        # Get the location of the boring orthogonal projection to the section.
+        projection_point = self.get_projection_point(section_line)
+    
+        # As ref_point and projection_point are both on the section_line, get
+        # the horizontal distance between the two (in decimal degrees dd).
+        x_dd = ref_point.get_distance(projection_point)
+        
+        # Convert from decimal degrees to ft. One degree of lattitude approx. 
+        # equals 364,567.2 ft (69.1 miles).
+        x_ft = x_dd * 364567.2 
+        return x_ft
+    
+    def plot_borehole(self):
+        """Plots the borehole."""
+        pass
 
 
 class BoringCollection:
@@ -238,6 +259,10 @@ class BoringCollection:
         _boring_data :
         _boring_color_data :
         _boring_interval_data :
+        
+        _projection_point : projection point to a particular section.          ; Maybe should not be attributes of the borehole.
+        _projection_line  : projection line to a particular section.           ; Could be methods of a section given a boring. 
+        _section_loc      : projection x-loc on the particular section.        ; Borehole can be attached to multiple sections. 
         
     """
     def __init__(self):
@@ -469,14 +494,15 @@ class Section:
 
 
 def main():
-    
+    """
+    Example usage.
+    """
     # Load the data
     fname = "Terminal Dam Boring Intervals.xlsx"
     boring_data = pd.read_excel(fname, sheet_name="borings")
     interval_data = pd.read_excel(fname, sheet_name="boring-data")
     boring_color_data = pd.read_excel(fname, sheet_name="colors")
     boring_ids = [5, 10, 23, 29, 22, 11, 1, 3, 2, 4]
-    
     
     bhc = BoringCollection()
     bhc.process_borings(boring_ids, boring_data, interval_data)
@@ -489,27 +515,12 @@ def main():
     
     fig, ax = plt.subplots(figsize=(15,15))
     section.plot_sections(ax=ax)
+    # section.plot_borings
     ax.set_ylim(bottom=150, top=360)
     ax.set_xlim(left=-25, right=800)
-    ax.set_aspect('equal','box')
-    
-    
-    
-    # # Holes to process
-    # boring_ids = [5, 10, 23, 29, 22, 11, 1, 3, 2, 4]
-    
-    # # Process the borings
-    # borings = process_borings(boring_ids, boring_data, interval_data)
-    
-    # # Get section line
-    # # xy_us_toe = (35.1708928, -120.5345804)
-    # # xy_ds_toe = (35.1696816, -120.5333135)
-    # xy_us_toe = (35.1707027, -120.5346784)
-    # xy_ds_toe = (35.1695906, -120.5335153)
-    # section_line = get_line_from_points(xy_us_toe, xy_ds_toe)
-        
-    # # Update boring projections
-    # update_boring_projections(borings, section_line, xy_us_toe)
+    ax.set_aspect('equal','box')    
+    # fig.savefig("test.svg", dpi=300, bbox_inches="tight", format="svg")
+    # plt.show()
     
     # # Create colormap
     # ## sorted(list(filter(lambda x: type(x) is str, key_values)))
@@ -521,21 +532,6 @@ def main():
     # #     colors[key] = c
     # colors = boring_color_data.set_index('Classification')['Color'].to_dict()
     
-    # # Setup figure
-    # fig, ax = plt.subplots(figsize=(15,15))
-    
-    # # Get the section data
-    # section_data, color_data = read_section_data("Terminal Dam Section.xlsx", "Long")
-    
-    # # Draw the dam section, etc.
-    # plot_sections(fig, ax, section_data, color_data)
-    # plot_borings(fig, ax, borings, colors) 
-    # format_axes(fig, ax)
-    
-    # # Save figure
-    # fig.savefig("test.svg", dpi=300, bbox_inches="tight", format="svg")
-    # plt.show()
-
 
 if __name__ == '__main__':
     main()
