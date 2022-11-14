@@ -225,7 +225,6 @@ class Borehole:
         self._section_loc = x
 
 
-
 class BoringCollection:
     """BoringCollection representing a collection of individual boreholes of
     the same type.
@@ -306,128 +305,167 @@ class BoringCollection:
 
 
 class Section:
-    """Section class representing any dam section (e.g. transverse,
-    longitudinal, etc.).
+    """Section class representing dam section.
+    
+    Can be used to plot a dam section, and overlay/project boring data from
+    BoringCollections.
+    
+    Attributes:
+        _data : nested dictionary representing the section data where the 
+                top-level keys are 'sections' and 'colors', referring to the
+                geometry and color data, respectively. The bottom-level keys
+                correspond to the geometry section names/columns.
+                referring 
+        _line : Line object representing the projection axis/line/dam 
+                alignment.
+        _collections : dictionary representing various BoreholeCollection
+                objects, where the key corresponds to a unique identifer.
     """
-    def __init__(self, line):
+    def __init__(self):
+        self._data = {'sections': {}, 'colors':{}}
+        self._line = None
+        self._collections = {}
+    
+    # Public getters.
+    def get_data(self):
+        """"Returns the section and color data dict."""
+        return self._data
+    
+    def get_line(self):
+        """Returns the line object of the Section."""
+        return self._line
+    
+    def get_zones(self):
+        """Returns the keys/zones of the section data."""
+        return self._data['sections'].keys()
+    
+    def get_section(self, key):
+        """Returns the section data for the specified key."""
+        return self._data['sections'].get(key, None)
+    
+    def get_color(self, key):
+        """Returns the section color for the specified key"""
+        return self._data['colors'].get(key, None)
+    
+    # Public setters. 
+    def set_line(self, line):
+        """Sets the alignment of the section from a Line object."""
         self._line = line
-        self._section_data = None
-        self._color_data = None
-        self._boringcollection = None
-    
-    def add_section_data(self, excel_file, sheet_name):
-        """Adds dam section datafrom an excel file and returns a dictionary 
-        with each section represented by a dataframe.
+        
+    def set_line_from_points(self, p1, p2):
+        """Sets the alignment of the section from two Point objects."""
+        self._line = Line(p1, p2)
+        
+    def add_collection(self, collection_id, boring_collection):
+        """Adds a boring collection.
+        
+        Parameters:
+            collection_id : unique identifier of the borehole collection. 
+            boring_collection : BoringCollection object representing the group
+                of borings to add. 
         """
+        self._collections[collection_id] = boring_collection
         
-        raw = pd.read_excel(excel_file, sheet_name=sheet_name)
+    def remove_collection(self, collection_id):
+        """Removes a boring collection.
         
-        section_data = {}
-        color_data = {}
+        Parameters:
+            collection_id : unique identifier of the borehole collection. 
+        """
+        if self._collections.get(collection_id, None):
+            del self._collections[collection_id]
+            
+    def return_boring_collection(collection_id):
+        """Returns a boring collection object given the unique identifier.
         
-        columns = raw.columns
-        for i in range(0, len(columns), 2):
-            section_name = columns[i]
-            
-            tag = raw.iloc[0,i+1]
-            color = raw.iloc[1,i+1]
-            
-            x_lab = raw.iloc[2,i]
-            y_lab = raw.iloc[2,i+1]
-            
-            x = raw.iloc[3:,i]
-            y = raw.iloc[3:,i+1]
-            
-            df = pd.DataFrame(data={x_lab: x, y_lab: y}).dropna()
+        Parameters:
+            collection_id : unique identifier of the borehole collection.
+        """
+        return self._collections.get(collection_id, None)
     
-            section_data[section_name] = df
-            color_data[section_name] = color
-            
-        self._section_data = section_data
-        self._color_data = color_data
+    # Public methods.
+    def read_section_data(self, fname, sheet_name=None):
+        """Reads dam section data from a csv or excel file.
         
-        return self._section_data, self._color_data
-
-    def plot_sections(fig, ax, section_data, color_data):
-        """Plots the section data."""
-        
-        for key in section_data.keys():
-            
-            section = section_data[key]
-            
-            if 'profile' in key.lower():
-                ax.plot(section.x, section.elev,
-                        c='k', lw=1.0, zorder=0, label=key)
-            elif 'resevoir level' in key.lower():
-                ax.plot(section.x, section.elev,
-                        c='b', lw=1.0, zorder=0, label=key)
+        Parameters:
+            fname : string representing the filename.
+            sheet_name : string representing sheet name, if excel file.
+        """
+        try: 
+            ext = fname.split('.')[-1]
+            if ext in ('.xlsx','.xlsm', '.xlsb', '.xltx'):
+                table = pd.read_excel(fname, sheet_name)
             else:
-                ax.fill(section.x, section.elev,
-                        c=color_data[key], lw=1.0, zorder=0, label=key)
+                table = pd.read_csv(fname)
+            
+            columns = table.columns
+            # Reads every 2 columns as a set until we reach the end of the table.
+            for i in range(0, len(columns), 2):
                 
-        return fig, ax
-    
-    
-    def plot_borings(fig, ax, borings, colors):
-        """Plots the boring data."""
-        width = 10
-        fs = 5
-        bh_label_voffset = 5
+                # Gets the column name/key.
+                key = columns[i]
+                
+                # Extracts the geometry tag, and color assginment.
+                tag = table.iloc[0,i+1]
+                color = table.iloc[1,i+1]
+                
+                # Gets the table x and y labels.
+                x_lab = table.iloc[2,i]
+                y_lab = table.iloc[2,i+1]
+                
+                # Gets the x and y data.
+                x = table.iloc[3:,i]
+                y = table.iloc[3:,i+1]
+                
+                # Creates a new dataframe of x, y data, striping all NAN rows, 
+                # and casting to float type.
+                df = pd.DataFrame(data={x_lab: x, y_lab: y})
+                df = df.dropna(axis=0, how='all').astype(float)
         
-        for bh in borings:
-            df = borings[bh].get_data()
-            xo = borings[bh].get_section_loc()
-            plt.text(xo, df.iloc[0]['Start Elev.'] + bh_label_voffset, bh)
-            for i, row in df.iterrows():
-                x = np.array([xo, xo + width]).flatten()
-                y1 = [row['End Elev.'],row['End Elev.']]
-                y2 = [row['Start Elev.'],row['Start Elev.']]
-                plt.fill_between(x, y1, y2=y2, color=colors[row.Classification],
-                                 ec='k', lw=0.5)
-                try:        
-                    description = row.Description.split(",")[0]
-                except:
-                    description = ""
-                plt.text(xo + width, (row['End Elev.'] + row['Start Elev.'])/2, 
-                         f"{row.Classification} ({description})", 
-                         fontsize = fs)
-
-
-    def check_projection(borings, xy_us_toe, xy_ds_toe):
-        """Checks the boring projection."""
-        fig, ax = plt.subplots()
-        for bh in borings:
-            plt.plot(borings[bh].get_lat(), borings[bh].get_long(), 'o')
-        for bh in borings:
-            x, y = borings[bh].get_projection_point()
-            plt.plot(x, y, 'o', mfc='w')
-        xlim = plt.gca().get_xlim()
-        for bh in borings:
-            plt.plot(xlim,
-                [borings[bh].get_projection_line().f(xlim[0]), 
-                 borings[bh].get_projection_line().f(xlim[1])]) 
-        x, y = list(zip(*[xy_us_toe, xy_ds_toe]))
-        plt.plot(x,y)
-        plt.axis('equal')
-
+                # Assigns the section dataframes and colors by section_name to 
+                # attributes.
+                self._data['sections'][key] = df
+                self._data['colors'][key] = color
+        except:
+            print("Failed to load section data.")
+                
     
-    def format_axes(fig, ax):
-        """"Format axes."""
-        ax.set_aspect('equal','box')
-        # ax.set_aspect(2.0)
-        fig.tight_layout()
-        # ax.set_ylim(bottom=100, top=360)
-        ax.set_ylim(bottom=150, top=360)
-        ax.set_xlim(left=-25, right=800)
-        ax.set_xlabel('Distance (ft)')
-        ax.set_ylabel('Elevation (ft)')
+    def plot_sections(self, ax=None, fig=None):
+        """Plots the section data, and returns the figure and axis handle.
         
-        # Legend with repeating labels removed (ignoring US and DS tags)
-        handles, labels = ax.get_legend_handles_labels()
-        labels = [lab.replace('US','').replace('DS','').rstrip() for lab in labels]
-        by_label = dict(zip(labels, handles))
-        ax.legend(by_label.values(), by_label.keys(), ncol=len(by_label), loc='upper center')
-
+        Certain keywords (case-insensitive) are resevered, e.g.
+        'profile' or 'dam profile' - for the dam profile is plotted as a 
+            black line.
+        'resevoir level', or 'water level' - for the water level is plotted as
+            a blue line.
+            
+        Parameters:
+            ax  : matplotlib axis handle.
+            fig : matplotlib figure handle.
+        """
+        try:
+            # Sets up a new figure and axis handle if we aren't given one.
+            if ax == None:
+                fig, ax = plt.subplots()
+                ax.set_aspect('equal','box')
+            
+            # Plots all of the section data geometries.
+            for key in self.get_zones():
+                section = self.get_section(key)
+                color = self.get_color(key)
+                
+                if key.lower() in ('dam profile', 'profile'):
+                    ax.plot(section.x, section.elev,
+                            c='k', lw=1.0, zorder=0, label=key)
+                elif key.lower() in ('resevoir level', 'water level'):
+                    ax.plot(section.x, section.elev,
+                            c='b', lw=1.0, zorder=0, label=key)
+                else:
+                    ax.fill(section.x, section.elev,
+                            c=color,  lw=1.0, zorder=0, label=key)
+            return fig, ax
+        except:
+            print("Error when plotting dam section.")
 
 
 def main():
@@ -443,8 +481,16 @@ def main():
     bhc = BoringCollection()
     bhc.process_borings(boring_ids, boring_data, interval_data)
     
+    section = Section()
+    section.read_section_data("Terminal Dam Section.csv")
     
-    print('hello')
+    fig, ax = plt.subplots(figsize=(15,15))
+    section.plot_sections(ax=ax)
+    ax.set_ylim(bottom=150, top=360)
+    ax.set_xlim(left=-25, right=800)
+    ax.set_aspect('equal','box')
+    
+    
     
     # # Holes to process
     # boring_ids = [5, 10, 23, 29, 22, 11, 1, 3, 2, 4]
